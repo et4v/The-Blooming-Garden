@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/lily.png" alt="A pink lily" width="220">
+</p>
+
 # 🌸 The Blooming Garden 🌸
 A Mini-Distributed Control System in C
 
