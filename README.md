@@ -1,77 +1,114 @@
-# 🌸 The Blooming Garden  
-## A Mini-Distributed Control System
+# 🌸 The Blooming Garden 🌸
+A Mini-Distributed Control System in C
 
 ## Overall Concept
-I built a small simulated system that behaves like a very simple distributed robotic garden. Each flower operates as its own TCP client and contains several petals (up to eight) that move incrementally over time.
+I built a small simulated "garden" where every flower is its own networked program. Each flower connects to a central server over TCP and has between one and eight petals that move gradually toward their targets.
 
-The server acts as a central controller and sends high-level commands to all flowers (or individual ones). Each client handles its own timing and animation, similar to how small embedded boards control their own motors while listening to commands from a main controller.
-
-This design closely mirrors real robotics and embedded systems architectures while keeping the code clean and modular.
+It's structured like a supervisory controller and its embedded nodes: the server sends high-level commands ("open," "run sequence 2") to every flower or just one, and each flower runs its own motion loop and reports its status back. That's the same split a main controller and small motor boards use, where the boards handle their own timing while listening for commands.
 
 ---
 
 ## Client Responsibilities
-Each client program represents a single flower. After connecting to the server, each flower:
+Each client program is a single flower. After connecting to the server, each flower:
 
-- Waits for server commands  
-- Simulates petal motion and bloom behavior  
-- Updates petal angles gradually over time  
-- Sends status messages back to the server  
-- Prints its own movement for visualization and debugging  
-- Safely closes and terminates when receiving a TERMINATE command  
+- Introduces itself with a `HELLO` so the server can register it by name
+- Runs a motion loop every 100 ms, moving each petal a little closer to its target angle
+- Sends `STATUS` messages back to the server with its state (`IDLE` or `MOVING`) and petal angles
+- Prints its own petal angles so you can watch it move
+- Closes its petals and exits cleanly when it receives `TERMINATE`
 
 ---
 
 ## Server Responsibilities
-The server acts as the central controller for the entire garden. It:
+The server is the central controller for the garden. It:
 
-- Accepts and tracks multiple flower clients simultaneously  
-- Stores client names, statuses, and connection information  
-- Receives and displays client status updates  
-- Sends commands such as `OPEN`, `CLOSE`, `SEQ1`, `SEQ2`, and `TERMINATE`  
-- Executes a `BLOOM` command that triggers randomized, staggered bloom timing  
-- Safely shuts down the system by terminating all connected flowers  
+- Accepts up to 64 flowers at once, one thread per connection
+- Keeps a table of connected flowers (name, connection, latest status), protected by a mutex
+- Caches each flower's most recent status so you can check on the whole garden at any time
+- Runs an interactive `garden>` console for sending commands (case-insensitive)
+- Shuts down gracefully: `QUIT` closes every flower, terminates them, and waits for all of them to disconnect before exiting
+
+### Commands
+
+| Command | What it does |
+|---|---|
+| `OPEN all\|<name>` | Open every flower, or one flower |
+| `CLOSE all\|<name>` | Close every flower, or one flower |
+| `SEQ1 all\|<name>` | Petal sequence 1 (left to right) |
+| `SEQ2 all\|<name>` | Petal sequence 2 (outside in) |
+| `TERMINATE all\|<name>` | Close and disconnect flowers |
+| `BLOOM` | Every flower gets a random sequence, with randomized staggered timing |
+| `LIST` | List connected flowers |
+| `STATUS` | Show each flower's most recent status |
+| `HELP` | Show the command list |
+| `QUIT` | Close and terminate every flower, then shut down |
 
 ---
 
 ## Why the Files Are Split
-Flower logic for petals, angles, motion, and sequences is implemented in `flower.c` and `flower.h`. Networking and threading logic lives in the server and client source files.
+Petal motion, angles, and sequences live in `flower.c` and `flower.h`. Networking and threading live in the server and client files.
 
-This separation keeps movement and math logic independent from socket communication. If the system were ever implemented physically, the flower behavior could be ported to a microcontroller without restructuring the overall architecture.
+`flower.c` is plain, portable C: it uses only the standard library (no threads, sockets, or OS calls). If the garden were ever built with real hardware, the flower logic could move to a microcontroller unchanged, with only the communication layer swapped out.
 
 ---
 
-## Programming Language and Libraries
-- **Language:** C  
-- **Libraries:** CS:APP networking library  
-- **Build System:** Makefile (builds both server and client programs and is included!) 
+## Built With
+- **Language:** C
+- **Networking and concurrency:** POSIX sockets and pthreads, through the CS:APP wrapper library
+- **Build system:** Makefile (builds both the server and the client)
 
 ---
 
 ## How to Run
 
-### For MacOS/Linux
-1. Use a Unix-based operating system (macOS or Linux)
-2. Ensure a C compiler and `make` are available
-3. Build the project using the provided Makefile
-4. Run the server program first using ./garden_server <port>
-5. Run one or more flower client programs in separate terminals using ./flower_client <server_host> <port> <flower_name> <num_petals>
-6. Enter commands using the server terminal
+### macOS / Linux
+1. Make sure you have a C compiler (`gcc` or `clang`) and `make`.
+2. **Get the CS:APP library:** download `csapp.c` and `csapp.h` from the [CS:APP code examples page](https://csapp.cs.cmu.edu/3e/code.html) and put both files in the project folder.
+3. Build both programs:
+   ```bash
+   make
+   ```
+4. Start the server first:
+   ```bash
+   ./garden_server <port>
+   ```
+5. In separate terminals, start one or more flowers (1 to 8 petals each):
+   ```bash
+   ./flower_client <server_host> <port> <flower_name> <num_petals>
+   ```
+6. Type commands into the server's `garden>` prompt.
+
+For example, a three-flower garden:
+```bash
+./garden_server 5050
+./flower_client localhost 5050 rose 5
+./flower_client localhost 5050 tulip 6
+./flower_client localhost 5050 daisy 8
+```
+Then type `BLOOM` at the `garden>` prompt and watch each flower's terminal.
 
 ### Windows
-Windows does not natively support POSIX Makefiles, but the project can still be run by using Windows Subsystem for Linux (WSL) or some kind of Unix-compatible environment such as MSYS2 or MinGW.
+The code uses POSIX sockets and pthreads, which Windows doesn't provide natively. Run it in Windows Subsystem for Linux (WSL), or another Unix-compatible environment such as MSYS2.
 
 ### Running Across Multiple Devices (So Cool)
+The server and flowers don't have to be on the same computer:
 
-To run the garden server and flower clients on different devices, follow these steps:
-
-- Choose one device to act as the **garden server**
-- Start the server and keep it running for the duration of the session
-- Identify the **IP address or hostname** of the server device
-- On each flower device, ensure it can reach the server over the network
-- Configure each flower client to connect using the server’s IP address in the terminal command
-- Start flower clients only after the server is running
+- Pick one device to be the **garden server** and start it first
+- Find that device's **IP address or hostname**
+- On each flower device, pass the server's IP address as `<server_host>`
+- Start the flowers only after the server is running
 
 Notes:
-- All devices should be on the same local network or otherwise properly routed to connect
-- Firewalls or restricted networks may block connections between devices, so check that first if there issues
+- All devices need to be on the same local network, or otherwise able to reach each other
+- If flowers can't connect, check firewalls first; the server's port has to be reachable
+
+---
+
+## Known Limitations
+Things I'd fix next, and what I'd change for real hardware:
+
+- **Message framing:** TCP is a byte stream, so one `read()` can return part of a message or two messages at once. The code currently treats each read as one message; a buffered line reader would fix it.
+- **Disconnects:** writing to a flower that has already disconnected can raise `SIGPIPE`, which stops the server.
+- **Partial writes:** `write()` can send fewer bytes than requested, and the code doesn't retry the rest.
+- **Scaling:** one thread per flower is simple but heavy at large scale; an event loop (`poll`/`epoll`) would scale further.
+- **Real hardware:** physical boards would use a bus or lightweight protocol instead of TCP, a hardware timer instead of `sleep`, heartbeats with a safe state when the controller disappears, and sensor feedback instead of computed petal positions.
